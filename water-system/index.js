@@ -1,4 +1,3 @@
-// index.js
 require("dotenv").config();
 
 const express = require("express");
@@ -32,12 +31,18 @@ const {
   connectDB,
 } = require("./db");
 const { sendDailyReport } = require("./report");
-const { analyzeSystem } = require("./ai");
 
-// Store previous states for comparisons
+// Safe AI import
+let analyzeSystem = () => "AI unavailable";
+try {
+  analyzeSystem = require("./models/ai").analyzeSystem;
+} catch {
+  console.warn("⚠️ ai.js not found");
+}
+
 let previousStates = {};
 
-// 🔁 Polling function
+// 🔁 Polling
 async function pollAndBroadcast() {
   try {
     const [tanks, meters] = await Promise.all([
@@ -47,45 +52,29 @@ async function pollAndBroadcast() {
 
     const now = new Date();
 
-    // 🔹 Main dashboard update
-    io.emit("dashboard:update", {
-      tanks,
-      meters,
-      updatedAt: now,
-    });
+    io.emit("dashboard:update", { tanks, meters, updatedAt: now });
 
-    // 🔹 Granular updates
     tanks.forEach((t) => io.emit("tank:update", t));
     meters.forEach((m) => io.emit("meter:update", m));
 
-    // 💾 Save data
     await Promise.all([
       saveTankReadings(tanks),
       saveMeterReadings(meters),
     ]);
 
-    // 🚨 Alerts (SMS + Email + frontend)
     const alerts = await checkAndSendAlerts(
       tanks,
       meters,
       previousStates
     );
 
-    if (alerts && alerts.length) {
-      io.emit("alerts", alerts);
-    }
+    if (alerts.length) io.emit("alerts", alerts);
 
-    // 📊 Threshold checks
     await checkConsumptionThresholds(meters);
 
-    // 🧠 AI Insights
     const insight = analyzeSystem(tanks, meters);
-    io.emit("system:insight", {
-      message: insight,
-      time: now,
-    });
+    io.emit("system:insight", { message: insight, time: now });
 
-    // ❤️ System health
     io.emit("system:health", {
       tanks: tanks.length,
       meters: meters.length,
@@ -93,76 +82,46 @@ async function pollAndBroadcast() {
       time: now,
     });
 
-    // 🔁 Update previous states
     tanks.forEach((t) => {
-      previousStates[`tank_${t.tankId}`] =
-        t.lastReceivedTankData?.tankState;
-      previousStates[`tank_hw_${t.tankId}`] = t.hardwareState;
+      previousStates[`tank_${t.tankId}`] = t.level;
     });
 
-    meters.forEach((m) => {
-      previousStates[`meter_${m.flowDeviceId}`] =
-        m.lastReceivedFlowData?.flowDeviceState;
-      previousStates[`meter_hw_${m.flowDeviceId}`] =
-        m.hardwareState;
-    });
+    console.log(`✅ Poll complete`);
 
-    console.log(
-      `✅ Poll complete — ${tanks.length} tanks, ${meters.length} meters`
-    );
   } catch (err) {
     console.error("❌ Poll error:", err.message);
-
-    if (process.env.NODE_ENV !== "production") {
-      console.error(err);
-    }
   }
 }
 
-// ⏱ Run every 60 seconds
-setInterval(pollAndBroadcast, 60 * 1000);
+setInterval(pollAndBroadcast, 60000);
 
-// 📄 Daily report at 7AM (Nairobi time)
+// Daily report
 cron.schedule(
   "0 7 * * *",
   async () => {
-    console.log("📄 Sending daily report...");
     try {
       await sendDailyReport();
     } catch (err) {
-      console.error("❌ Report error:", err.message);
+      console.error("Report error:", err.message);
     }
   },
   { timezone: "Africa/Nairobi" }
 );
 
-// 🔌 Socket.IO connection handling
+// Socket
 io.on("connection", (socket) => {
-  console.log("🟢 Client connected:", socket.id);
-
-  socket.on("disconnect", () => {
-    console.log("🔴 Disconnected:", socket.id);
-  });
+  console.log("🟢 Client:", socket.id);
 });
 
-
+// Start
 async function start() {
-  try {
-    await connectDB();
+  await connectDB();
+  await pollAndBroadcast();
 
-    await pollAndBroadcast(); // run immediately
-
-    const PORT = process.env.PORT || 3001;
-
-    server.listen(PORT, () => {
-      console.log(
-        ` Server running on port ${PORT} → http://localhost:${PORT}`
-      );
-    });
-  } catch (err) {
-    console.error("❌ Startup error:", err.message);
-    process.exit(1);
-  }
+  const PORT = process.env.PORT || 3001;
+  server.listen(PORT, () =>
+    console.log(`Server running → http://localhost:${PORT}`)
+  );
 }
 
 start();
