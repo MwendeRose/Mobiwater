@@ -1,13 +1,11 @@
-// report.js
 const { getDailyConsumptionSummary, getLatestTankReadings } = require("./db");
 
-// 📊 Generate daily report
 async function sendDailyReport() {
   try {
     const tanks = await getLatestTankReadings();
     const meters = await getDailyConsumptionSummary();
 
-    console.log("\n📊 DAILY REPORT");
+    console.log("\n DAILY REPORT");
 
     // Tanks
     tanks.forEach(t => {
@@ -23,9 +21,9 @@ async function sendDailyReport() {
       );
     });
 
-    console.log("✅ Report generated\n");
+    console.log(" Report generated\n");
   } catch (err) {
-    console.error("❌ Report error:", err.message);
+    console.error(" Report error:", err.message);
   }
 }
 

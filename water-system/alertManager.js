@@ -19,7 +19,7 @@ async function triggerAlert({ type, title, message, key }) {
   try {
     if (key && !canSend(key)) return;
 
-    console.log(`🚨 [${type}] ${message}`);
+    console.log(`[${type}] ${message}`);
 
     await sendEmail(title, message);
     await sendSMS(`${title}: ${message}`);

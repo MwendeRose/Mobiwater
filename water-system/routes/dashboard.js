@@ -1,4 +1,3 @@
-// routes/dashboard.js
 const express = require("express");
 const router = express.Router();
 
@@ -11,10 +10,6 @@ const {
   getMeterConsumption
 } = require("../mobiwater");
 
-// ─────────────────────────────────────────
-// 🚀 Dashboard summary
-// GET /api/dashboard/summary
-// ─────────────────────────────────────────
 router.get("/summary", async (req, res) => {
   try {
     const [tanks, meters] = await Promise.all([getTanks(), getMeters()]);
@@ -79,10 +74,6 @@ router.get("/summary", async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────
-// 🪣 All tanks
-// GET /api/dashboard/tanks
-// ─────────────────────────────────────────
 router.get("/tanks", async (req, res) => {
   try {
     const tanks = await getTanks();
@@ -93,10 +84,6 @@ router.get("/tanks", async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────
-// 🪣 Single tank + historical data
-// GET /api/dashboard/tanks/:tankId?fromDate=&toDate=
-// ─────────────────────────────────────────
 router.get("/tanks/:tankId", async (req, res) => {
   try {
     const { tankId } = req.params;
@@ -115,10 +102,7 @@ router.get("/tanks/:tankId", async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────
-// 📊 Tank aggregation report
-// GET /api/dashboard/tanks/report?start=&end=&window=DAILY&page=0
-// ─────────────────────────────────────────
+
 router.get("/tanks-report", async (req, res) => {
   try {
     const { start, end, window = "DAILY", page = 0 } = req.query;
@@ -135,10 +119,7 @@ router.get("/tanks-report", async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────
-// 💧 All meters
-// GET /api/dashboard/meters
-// ─────────────────────────────────────────
+
 router.get("/meters", async (req, res) => {
   try {
     const meters = await getMeters();
@@ -149,10 +130,7 @@ router.get("/meters", async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────
-// 💧 Single meter + historical data
-// GET /api/dashboard/meters/:meterId?fromDate=&toDate=
-// ─────────────────────────────────────────
+
 router.get("/meters/:meterId", async (req, res) => {
   try {
     const { meterId } = req.params;
@@ -171,10 +149,7 @@ router.get("/meters/:meterId", async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────
-// 📈 Meter consumption analytics
-// GET /api/dashboard/meters/:meterId/consumption?fromDate=&toDate=
-// ─────────────────────────────────────────
+
 router.get("/meters/:meterId/consumption", async (req, res) => {
   try {
     const { meterId } = req.params;

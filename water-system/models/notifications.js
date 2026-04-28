@@ -1,9 +1,6 @@
 const nodemailer = require("nodemailer");
 const AfricasTalking = require("africastalking");
 
-// =========================
-// EMAIL SETUP
-// =========================
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -12,9 +9,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// =========================
-// SMS SETUP
-// =========================
+
 const at = AfricasTalking({
   apiKey: process.env.AT_API_KEY,
   username: process.env.AT_USERNAME,
@@ -22,9 +17,7 @@ const at = AfricasTalking({
 
 const sms = at.SMS;
 
-// =========================
-// SEND EMAIL
-// =========================
+
 async function sendEmail(subject, message) {
   if (!process.env.ALERT_EMAIL_FROM) {
     console.log("Email not configured");
@@ -38,12 +31,9 @@ async function sendEmail(subject, message) {
     text: message,
   });
 
-  console.log("📧 Email sent");
+  console.log(" Email sent");
 }
 
-// =========================
-// SEND SMS
-// =========================
 async function sendSMS(message) {
   if (!process.env.AT_API_KEY) {
     console.log("SMS not configured");

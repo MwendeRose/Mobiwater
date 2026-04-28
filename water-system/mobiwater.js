@@ -3,15 +3,9 @@ const axios = require("axios");
 
 const BASE_URL = process.env.BASE_URL;
 
-// =========================
-// TOKEN CACHE
-// =========================
 let cachedToken = null;
 let tokenExpiry = null;
 
-// =========================
-// LOGIN
-// =========================
 async function getToken() {
   const now = Date.now();
 
@@ -19,7 +13,7 @@ async function getToken() {
     return cachedToken;
   }
 
-  console.log("🔐 Logging into MobiWater API...");
+  console.log(" Logging into MobiWater API...");
 
   let res;
   try {
@@ -28,7 +22,7 @@ async function getToken() {
       clientSecret: process.env.CLIENT_SECRET,
     });
   } catch (err) {
-    console.error("❌ LOGIN FAILED:");
+    console.error(" LOGIN FAILED:");
     console.error(err.response?.data || err.message);
     throw new Error("Authentication failed — check credentials/API format");
   }
@@ -40,13 +34,10 @@ async function getToken() {
   cachedToken = res.data.token;
   tokenExpiry = Date.now() + 50 * 60 * 1000; // 50 min cache
 
-  console.log("✅ Login successful");
+  console.log(" Login successful");
   return cachedToken;
 }
 
-// =========================
-// AUTH GET (WITH RETRY)
-// =========================
 async function authedGet(url, params = {}) {
   let token = await getToken();
 
@@ -59,7 +50,7 @@ async function authedGet(url, params = {}) {
 
   } catch (err) {
     if (err.response?.status === 401) {
-      console.warn("🔄 Token expired — retrying...");
+      console.warn(" Token expired — retrying...");
 
       cachedToken = null;
       tokenExpiry = null;
@@ -72,30 +63,21 @@ async function authedGet(url, params = {}) {
       return retry.data;
     }
 
-    console.error("❌ API ERROR:", err.response?.data || err.message);
+    console.error(" API ERROR:", err.response?.data || err.message);
     throw err;
   }
 }
 
-// =========================
-// TANKS
-// =========================
 async function getTanks() {
-  console.log("➡️ Fetching tanks...");
+  console.log(" Fetching tanks...");
   return authedGet(`${BASE_URL}/monitoring/v1/tanks/tankaccess/`);
 }
 
-// =========================
-// METERS
-// =========================
 async function getMeters() {
-  console.log("➡️ Fetching meters...");
+  console.log(" Fetching meters...");
   return authedGet(`${BASE_URL}/monitoring/v1/flowdevices/flowDeviceAccess/`);
 }
 
-// =========================
-// EXPORTS
-// =========================
 module.exports = {
   getTanks,
   getMeters,

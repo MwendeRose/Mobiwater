@@ -7,7 +7,6 @@ async function checkConsumptionThresholds(meters) {
     const pct =
       (m.dailyConsumption / m.consumptionThreshold) * 100;
 
-    // 📉 HIGH DAILY USAGE
     if (pct >= 80 && pct < 100) {
       await triggerAlert({
         type: "USAGE_HIGH",
@@ -17,7 +16,7 @@ async function checkConsumptionThresholds(meters) {
       });
     }
 
-    // 🚨 EXCEEDED
+
     if (pct >= 100) {
       await triggerAlert({
         type: "USAGE_EXCEEDED",

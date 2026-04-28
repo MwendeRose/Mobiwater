@@ -8,7 +8,7 @@ async function connectDB() {
   if (db) return db;
   await client.connect();
   db = client.db("mobiwater");
-  console.log("✅ Connected to MongoDB");
+  console.log(" Connected to MongoDB");
 
   // Create indexes for fast queries
   await db.collection("tank_readings").createIndex({ tankId: 1, recordedAt: -1 });

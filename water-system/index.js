@@ -6,7 +6,6 @@ const { Server } = require("socket.io");
 const path = require("path");
 const cron = require("node-cron");
 
-// ✅ FLOW LOGGER
 const { step, ok, fail } = require("./utils/logger");
 
 const app = express();
@@ -16,16 +15,13 @@ const io = new Server(server, { cors: { origin: "*" } });
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// Routes
 const dashboardRoutes = require("./routes/dashboard");
 app.use("/api/dashboard", dashboardRoutes);
 
-// API route
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// Modules
 const { getTanks, getMeters } = require("./mobiwater");
 const { checkAndSendAlerts } = require("./alerts");
 const { checkConsumptionThresholds } = require("./thresholds");
@@ -41,21 +37,17 @@ let analyzeSystem = () => "AI unavailable";
 try {
   analyzeSystem = require("./models/ai").analyzeSystem;
 } catch (e) {
-  console.warn("⚠️ AI module not found");
+  console.warn(" AI module not found");
 }
 
 let previousStates = {};
 
-// =========================
-// 🔁 POLLING ENGINE
-// =========================
 async function pollAndBroadcast() {
   const start = Date.now();
 
   try {
     step("CYCLE", "Starting new polling cycle");
 
-    // 🌐 FETCH API DATA
     step("API", "Fetching tanks and meters...");
     const [tanks, meters] = await Promise.all([
       getTanks(),
@@ -64,7 +56,6 @@ async function pollAndBroadcast() {
 
     ok("API", `Fetched ${tanks.length} tanks, ${meters.length} meters`);
 
-    // 📡 SOCKET BROADCAST
     step("SOCKET", "Broadcasting live data...");
     io.emit("dashboard:update", {
       tanks,
@@ -73,7 +64,6 @@ async function pollAndBroadcast() {
     });
     ok("SOCKET", "Broadcast complete");
 
-    // 💾 DATABASE SAVE
     step("DB", "Saving readings to MongoDB...");
     await Promise.all([
       saveTankReadings(tanks),
@@ -96,12 +86,10 @@ async function pollAndBroadcast() {
       ok("ALERTS", "No alerts triggered");
     }
 
-    // 📉 CONSUMPTION CHECK
     step("THRESHOLDS", "Checking consumption limits...");
     await checkConsumptionThresholds(meters);
     ok("THRESHOLDS", "Threshold check complete");
 
-    // 🧠 AI INSIGHT
     step("AI", "Generating system insight...");
     const insight = analyzeSystem(tanks, meters);
 
@@ -112,7 +100,6 @@ async function pollAndBroadcast() {
 
     ok("AI", "Insight generated");
 
-    // ❤️ SYSTEM HEALTH
     io.emit("system:health", {
       tanks: tanks.length,
       meters: meters.length,
@@ -120,7 +107,6 @@ async function pollAndBroadcast() {
       time: new Date(),
     });
 
-    // 🔁 UPDATE STATE
     step("STATE", "Updating previous state memory...");
     tanks.forEach((t) => {
       previousStates[`tank_${t.tankId}`] = t.level;
@@ -133,21 +119,14 @@ async function pollAndBroadcast() {
   } catch (err) {
     fail("CYCLE", err.message);
 
-    // 🔥 FULL DEBUG FOR YOUR 401 ISSUE
     console.error("\n🚨 FULL ERROR DETAILS:");
     console.error(err.response?.status || "No status");
     console.error(err.response?.data || err.message);
   }
 }
 
-// =========================
-// ⏱ RUN EVERY 60 SECONDS
-// =========================
 setInterval(pollAndBroadcast, 60 * 1000);
 
-// =========================
-// 📄 DAILY REPORT (7AM EAT)
-// =========================
 cron.schedule(
   "0 7 * * *",
   async () => {
@@ -162,16 +141,10 @@ cron.schedule(
   { timezone: "Africa/Nairobi" }
 );
 
-// =========================
-// 🔌 SOCKET CONNECTION
-// =========================
 io.on("connection", (socket) => {
   console.log("🟢 Client connected:", socket.id);
 });
 
-// =========================
-// 🚀 START SERVER
-// =========================
 async function start() {
   try {
     step("START", "Connecting to database...");
