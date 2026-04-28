@@ -3,84 +3,100 @@ const axios = require("axios");
 
 const BASE_URL = process.env.BASE_URL;
 
+// =========================
+// TOKEN CACHE
+// =========================
 let cachedToken = null;
+let tokenExpiry = null;
 
-// 🔐 Get token (with simple caching)
+// =========================
+// LOGIN
+// =========================
 async function getToken() {
-  if (cachedToken) return cachedToken;
+  const now = Date.now();
 
-  const res = await axios.post(`${BASE_URL}/api/v1/auth/login`, {
-    clientId: process.env.CLIENT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
-  });
+  if (cachedToken && tokenExpiry && now < tokenExpiry) {
+    return cachedToken;
+  }
+
+  console.log("🔐 Logging into MobiWater API...");
+
+  let res;
+  try {
+    res = await axios.post(`${BASE_URL}/api/v1/auth/login`, {
+      clientId: process.env.CLIENT_ID,
+      clientSecret: process.env.CLIENT_SECRET,
+    });
+  } catch (err) {
+    console.error("❌ LOGIN FAILED:");
+    console.error(err.response?.data || err.message);
+    throw new Error("Authentication failed — check credentials/API format");
+  }
+
+  if (!res.data?.token) {
+    throw new Error("Login succeeded but no token returned");
+  }
 
   cachedToken = res.data.token;
-  setTimeout(() => (cachedToken = null), 50 * 60 * 1000);
+  tokenExpiry = Date.now() + 50 * 60 * 1000; // 50 min cache
+
+  console.log("✅ Login successful");
   return cachedToken;
 }
 
-// 🔁 Authenticated GET — clears token and retries once on 401
+// =========================
+// AUTH GET (WITH RETRY)
+// =========================
 async function authedGet(url, params = {}) {
-  const token = await getToken();
+  let token = await getToken();
+
   try {
     const res = await axios.get(url, {
       headers: { Authorization: `Bearer ${token}` },
       params,
     });
     return res.data;
+
   } catch (err) {
     if (err.response?.status === 401) {
-      console.warn("🔄 Token rejected (401) — refreshing and retrying...");
+      console.warn("🔄 Token expired — retrying...");
+
       cachedToken = null;
-      const freshToken = await getToken();
+      tokenExpiry = null;
+      token = await getToken();
+
       const retry = await axios.get(url, {
-        headers: { Authorization: `Bearer ${freshToken}` },
+        headers: { Authorization: `Bearer ${token}` },
         params,
       });
       return retry.data;
     }
+
+    console.error("❌ API ERROR:", err.response?.data || err.message);
     throw err;
   }
 }
 
-// 📦 Get all tanks
+// =========================
+// TANKS
+// =========================
 async function getTanks() {
+  console.log("➡️ Fetching tanks...");
   return authedGet(`${BASE_URL}/monitoring/v1/tanks/tankaccess/`);
 }
 
-// 📦 Get tank historical data (time range)
-async function getTankData(tankId, fromDate, toDate) {
-  return authedGet(`${BASE_URL}/monitoring/v1/tanks/tankdata/${tankId}`, { fromDate, toDate });
-}
-
-// 📊 Get tanks aggregation report
-async function getTankAggregation(start, end, window = "DAILY", page = 0) {
-  return authedGet(`${BASE_URL}/monitoring/v1/tank-reports/aggregation`, { start, end, window, page });
-}
-
-// 💧 Get all flow meters
+// =========================
+// METERS
+// =========================
 async function getMeters() {
+  console.log("➡️ Fetching meters...");
   return authedGet(`${BASE_URL}/monitoring/v1/flowdevices/flowDeviceAccess/`);
 }
 
-// 💧 Get meter historical data (time range)
-async function getMeterData(flowDeviceId, fromDate, toDate) {
-  return authedGet(`${BASE_URL}/monitoring/v1/flowdevices/flowData/${flowDeviceId}`, { fromDate, toDate });
-}
-
-// 📈 Get meter consumption analytics (returns total number)
-async function getMeterConsumption(flowDeviceId, fromDate, toDate) {
-  return authedGet(
-    `${BASE_URL}/monitoring/v1/flowdevices/flowDeviceAnalytics/consumption/${flowDeviceId}`,
-    { fromDate, toDate }
-  );
-}
-
+// =========================
+// EXPORTS
+// =========================
 module.exports = {
   getTanks,
-  getTankData,
-  getTankAggregation,
   getMeters,
-  getMeterData,
-  getMeterConsumption,
 };

@@ -1,7 +1,9 @@
 const nodemailer = require("nodemailer");
 const AfricasTalking = require("africastalking");
 
-// EMAIL
+// =========================
+// EMAIL SETUP
+// =========================
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -10,30 +12,50 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// SMS
+// =========================
+// SMS SETUP
+// =========================
 const at = AfricasTalking({
   apiKey: process.env.AT_API_KEY,
   username: process.env.AT_USERNAME,
 });
 
-async function sendEmail(subject, text) {
-  if (!process.env.ALERT_EMAIL_FROM) return;
+const sms = at.SMS;
+
+// =========================
+// SEND EMAIL
+// =========================
+async function sendEmail(subject, message) {
+  if (!process.env.ALERT_EMAIL_FROM) {
+    console.log("Email not configured");
+    return;
+  }
 
   await transporter.sendMail({
     from: process.env.ALERT_EMAIL_FROM,
     to: process.env.ALERT_EMAIL_TO,
     subject,
-    text,
+    text: message,
   });
+
+  console.log("📧 Email sent");
 }
 
+// =========================
+// SEND SMS
+// =========================
 async function sendSMS(message) {
-  if (!process.env.AT_API_KEY) return;
+  if (!process.env.AT_API_KEY) {
+    console.log("SMS not configured");
+    return;
+  }
 
-  await at.SMS.send({
+  await sms.send({
     to: [process.env.ALERT_PHONE_TO],
     message,
   });
+
+  console.log("📱 SMS sent");
 }
 
 module.exports = { sendEmail, sendSMS };
