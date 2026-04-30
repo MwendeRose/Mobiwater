@@ -45,7 +45,7 @@ async function sendSMS(message) {
     message,
   });
 
-  console.log("📱 SMS sent");
+  console.log(" SMS sent");
 }
 
 module.exports = { sendEmail, sendSMS };

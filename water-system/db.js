@@ -17,7 +17,7 @@ async function connectDB() {
   return db;
 }
 
-// 💾 Save a snapshot of all tank readings
+
 async function saveTankReadings(tanks) {
   const database = await connectDB();
   const now = new Date();
@@ -39,7 +39,7 @@ async function saveTankReadings(tanks) {
   }
 }
 
-// 💾 Save a snapshot of all meter readings
+
 async function saveMeterReadings(meters) {
   const database = await connectDB();
   const now = new Date();
@@ -71,7 +71,7 @@ async function getTankHistory(tankId, hours = 24) {
     .toArray();
 }
 
-// 📊 Get meter history from DB (last N hours)
+
 async function getMeterHistory(flowDeviceId, hours = 24) {
   const database = await connectDB();
   const since = new Date(Date.now() - hours * 60 * 60 * 1000);
@@ -81,7 +81,7 @@ async function getMeterHistory(flowDeviceId, hours = 24) {
     .toArray();
 }
 
-// 📊 Get latest reading for all tanks
+
 async function getLatestTankReadings() {
   const database = await connectDB();
   return database.collection("tank_readings")
@@ -93,7 +93,6 @@ async function getLatestTankReadings() {
     .toArray();
 }
 
-// 📊 Get daily consumption summary from DB
 async function getDailyConsumptionSummary(date = new Date()) {
   const database = await connectDB();
   const start = new Date(date);

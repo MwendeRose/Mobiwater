@@ -37,7 +37,7 @@ async function checkAndSendAlerts(tanks, meters, previousStates = {}) {
     if (state === "HIGH" && pct >= 98) {
       await triggerAlert({
         type: "TANK_OVERFLOW",
-        title: `💧 Tank Near Overflow: ${tank.tankName}`,
+        title: ` Tank Near Overflow: ${tank.tankName}`,
         message: `${tank.tankName} is at ${pct}% — risk of overflow.`,
         key: `${id}_overflow`,
       });
@@ -92,7 +92,7 @@ async function checkAndSendAlerts(tanks, meters, previousStates = {}) {
     if (meter.hardwareState === "OFFLINE") {
       await triggerAlert({
         type: "METER_OFFLINE",
-        title: `📡 Meter Offline: ${meter.flowDeviceName}`,
+        title: ` Meter Offline: ${meter.flowDeviceName}`,
         message: `${meter.flowDeviceName} hardware is OFFLINE. Check device connection.`,
         key: `${id}_offline`,
       });
