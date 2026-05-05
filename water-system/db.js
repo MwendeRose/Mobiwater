@@ -1,4 +1,3 @@
-// db.js
 const { MongoClient } = require("mongodb");
 
 const client = new MongoClient(process.env.MONGO_URI);
@@ -10,7 +9,6 @@ async function connectDB() {
   db = client.db("mobiwater");
   console.log(" Connected to MongoDB");
 
-  // Create indexes for fast queries
   await db.collection("tank_readings").createIndex({ tankId: 1, recordedAt: -1 });
   await db.collection("meter_readings").createIndex({ flowDeviceId: 1, recordedAt: -1 });
 

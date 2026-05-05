@@ -7,7 +7,7 @@ function ok(name, msg) {
 }
 
 function fail(name, msg) {
-  console.log(`❌ [${name}] ${msg}`);
+  console.log(` [${name}] ${msg}`);
 }
 
 // IMPORTANT: correct export

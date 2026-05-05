@@ -1,12 +1,12 @@
 const mongoose = require("mongoose");
 
 const historySchema = new mongoose.Schema({
-  tankId: String,
-  level: Number,
-  createdAt: {
+  userId: String,
+  flow: Number,
+  date: {
     type: Date,
-    default: Date.now,
-  },
+    default: Date.now
+  }
 });
 
 module.exports = mongoose.model("History", historySchema);

@@ -1,6 +1,5 @@
 const { sendEmail, sendSMS } = require("./models/notifications");
 
-// prevent spam
 const lastAlerts = new Map();
 
 function canSend(key, cooldownMs = 10 * 60 * 1000) {
