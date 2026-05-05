@@ -1,6 +1,38 @@
 const { triggerAlert } = require("./alertmanager");
 
-async function checkAndSendAlerts(tanks, meters, previousStates = {}) {
+const tankMemory = new Map();
+
+
+const lastAlerts = new Map();
+
+function canSend(key, cooldownMs = 10 * 60 * 1000) {
+  const last = lastAlerts.get(key);
+  const now = Date.now();
+
+  if (!last || now - last > cooldownMs) {
+    lastAlerts.set(key, now);
+    return true;
+  }
+  return false;
+}
+
+function timeAgo(ms) {
+  const diff = Date.now() - ms;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins === 1) return "1 min ago";
+  return `${mins} mins ago`;
+}
+
+function classifyLevel(pct) {
+  if (pct <= 15) return "CRITICAL";
+  if (pct <= 40) return "LOW";
+  if (pct <= 85) return "NORMAL";
+  if (pct <= 95) return "HIGH";
+  return "OVERFLOW_RISK";
+}
+
+async function checkAndSendAlerts(tanks, meters = [], previousStates = {}) {
   const triggered = [];
 
   for (const tank of tanks) {
@@ -10,53 +42,100 @@ async function checkAndSendAlerts(tanks, meters, previousStates = {}) {
     if (!data) continue;
 
     const pct = data.waterLevelPercentage;
-    const state = data.tankState;
+    const volume = data.actualWaterVolume;
+    const now = Date.now();
 
+    const level = classifyLevel(pct);
 
-    if (pct <= 10) {
+    const prev = tankMemory.get(id);
+
+    if (!prev) {
+      tankMemory.set(id, {
+        initialVolume: volume,
+        lastVolume: volume,
+        lastPct: pct,
+        lastTime: now,
+      });
+    } else {
+      tankMemory.set(id, {
+        initialVolume: prev.initialVolume,
+        lastVolume: volume,
+        lastPct: pct,
+        lastTime: now,
+      });
+    }
+
+    const memory = tankMemory.get(id);
+
+    const drop = memory.initialVolume - volume;
+    const diffFromLast = memory.lastVolume - volume;
+
+    const baseMessage = `
+      Tank: ${tank.tankName}
+      Current Level: ${pct}% (${volume}L)
+      Initial Reading: ${memory.initialVolume}L
+      Last Reading: ${memory.lastVolume}L
+      Change since last: ${diffFromLast.toFixed(1)}L
+      Total drop: ${drop.toFixed(1)}L
+      Last updated: ${timeAgo(memory.lastTime)}
+    `;
+
+    if (level === "CRITICAL" && canSend(`${id}_critical`)) {
       await triggerAlert({
         type: "TANK_CRITICAL",
-        title: `Tank Critical: ${tank.tankName}`,
-        message: `${tank.tankName} is at ${pct}% capacity (${data.actualWaterVolume}L). Immediate refill needed.`,
+        title: `CRITICAL: ${tank.tankName}`,
+        message: baseMessage,
         key: `${id}_critical`,
       });
-      triggered.push({ id, type: "TANK_CRITICAL", pct });
+      triggered.push({ id, type: "CRITICAL", pct });
+    }
+
+    // LOW
+    else if (level === "LOW" && canSend(`${id}_low`)) {
+      await triggerAlert({
+        type: "TANK_LOW",
+        title: `LOW: ${tank.tankName}`,
+        message: baseMessage,
+        key: `${id}_low`,
+      });
+      triggered.push({ id, type: "LOW", pct });
     }
 
   
-    else if (state === "LOW") {
+    else if (level === "HIGH" && canSend(`${id}_high`)) {
       await triggerAlert({
-        type: "TANK_LOW",
-        title: ` Tank Low: ${tank.tankName}`,
-        message: `${tank.tankName} is at ${pct}% capacity (${data.actualWaterVolume}L).`,
-        key: `${id}_low`,
+        type: "TANK_HIGH",
+        title: `HIGH USAGE: ${tank.tankName}`,
+        message: baseMessage,
+        key: `${id}_high`,
       });
-      triggered.push({ id, type: "TANK_LOW", pct });
+      triggered.push({ id, type: "HIGH", pct });
     }
 
-    if (state === "HIGH" && pct >= 98) {
+
+    else if (level === "OVERFLOW_RISK" && canSend(`${id}_overflow`)) {
       await triggerAlert({
         type: "TANK_OVERFLOW",
-        title: ` Tank Near Overflow: ${tank.tankName}`,
-        message: `${tank.tankName} is at ${pct}% — risk of overflow.`,
+        title: `OVERFLOW RISK: ${tank.tankName}`,
+        message: baseMessage,
         key: `${id}_overflow`,
       });
-      triggered.push({ id, type: "TANK_OVERFLOW", pct });
+      triggered.push({ id, type: "OVERFLOW", pct });
     }
 
-    // 📡 Hardware offline
-    if (tank.hardwareState === "OFFLINE") {
+    if (tank.hardwareState === "OFFLINE" && canSend(`${id}_offline`)) {
       await triggerAlert({
         type: "TANK_OFFLINE",
-        title: ` Tank Offline: ${tank.tankName}`,
-        message: `${tank.tankName} hardware is OFFLINE. Check device connection.`,
+        title: `OFFLINE: ${tank.tankName}`,
+        message: `${tank.tankName} is offline. Last known reading: ${pct}%`,
         key: `${id}_offline`,
       });
-      triggered.push({ id, type: "TANK_OFFLINE" });
+
+      triggered.push({ id, type: "OFFLINE" });
     }
   }
 
-  
+
   for (const meter of meters) {
     const id = `meter_${meter.flowDeviceId}`;
     const data = meter.lastReceivedFlowData;
@@ -64,39 +143,40 @@ async function checkAndSendAlerts(tanks, meters, previousStates = {}) {
     if (!data) continue;
 
     const state = data.flowDeviceState;
-    const daily = meter.dailyConsumption;
+    const daily = meter.dailyConsumption || 0;
     const threshold = meter.consumptionThreshold;
 
-
-    if (threshold && daily > threshold) {
+    if (threshold && daily > threshold && canSend(`${id}_over`)) {
       await triggerAlert({
         type: "METER_OVERCONSUMPTION",
-        title: ` High Consumption: ${meter.flowDeviceName}`,
-        message: `${meter.flowDeviceName} daily usage is ${daily}L — exceeds limit of ${threshold}L.`,
-        key: `${id}_overconsumption`,
+        title: `HIGH USAGE: ${meter.flowDeviceName}`,
+        message: `${meter.flowDeviceName} used ${daily}L today (limit ${threshold}L)`,
+        key: `${id}_over`,
       });
-      triggered.push({ id, type: "METER_OVERCONSUMPTION", daily, threshold });
+
+      triggered.push({ id, type: "OVERCONSUMPTION", daily });
     }
 
-    if (state && state !== "NORMAL") {
+    if (state && state !== "NORMAL" && canSend(`${id}_abnormal`)) {
       await triggerAlert({
         type: "METER_ABNORMAL",
-        title: ` Meter Abnormal: ${meter.flowDeviceName}`,
-        message: `${meter.flowDeviceName} flow state is ${state}.`,
+        title: `ABNORMAL: ${meter.flowDeviceName}`,
+        message: `${meter.flowDeviceName} state: ${state}`,
         key: `${id}_abnormal`,
       });
-      triggered.push({ id, type: "METER_ABNORMAL", state });
+
+      triggered.push({ id, type: "ABNORMAL" });
     }
 
-    // 📡 Hardware offline
-    if (meter.hardwareState === "OFFLINE") {
+    if (meter.hardwareState === "OFFLINE" && canSend(`${id}_offline`)) {
       await triggerAlert({
         type: "METER_OFFLINE",
-        title: ` Meter Offline: ${meter.flowDeviceName}`,
-        message: `${meter.flowDeviceName} hardware is OFFLINE. Check device connection.`,
+        title: `OFFLINE: ${meter.flowDeviceName}`,
+        message: `${meter.flowDeviceName} is offline`,
         key: `${id}_offline`,
       });
-      triggered.push({ id, type: "METER_OFFLINE" });
+
+      triggered.push({ id, type: "OFFLINE" });
     }
   }
 

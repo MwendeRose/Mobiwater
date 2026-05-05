@@ -29,7 +29,7 @@ const SystemEngine = require("./systemEngine");
 const engine = new SystemEngine();
 
 const Analyzer = require("./analyzer");
-
+const analyzer = new Analyzer();
 
 let analyzeSystem = () => "AI unavailable";
 try {
@@ -50,7 +50,7 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-const analyzer = new Analyzer();
+const tankMemory = {};
 const previousStates = {};
 
 async function fetchData() {
@@ -94,15 +94,18 @@ async function persistData(tanks, meters) {
   ok("DB", "Saved");
 }
 
-
 async function runAlerts(tanks, meters) {
   step("ALERTS", "Checking alerts...");
 
-  const alerts = await checkAndSendAlerts(
-    tanks,
-    meters,
-    previousStates
-  );
+  const enrichedTanks = tanks.map((t) => {
+    const id = `tank_${t.tankId}`;
+    return {
+      ...t,
+      memory: tankMemory[id] || null,
+    };
+  });
+
+  const alerts = await checkAndSendAlerts(enrichedTanks, meters, previousStates);
 
   if (alerts?.length) {
     ok("ALERTS", `${alerts.length} triggered`);
@@ -114,12 +117,12 @@ async function runAlerts(tanks, meters) {
   return alerts || [];
 }
 
+
 async function runThresholds(meters) {
   step("THRESHOLDS", "Checking consumption...");
   await checkConsumptionThresholds(meters);
   ok("THRESHOLDS", "Done");
 }
-
 
 function runAI(tanks, meters) {
   step("AI", "Generating insight...");
@@ -134,10 +137,32 @@ function runAI(tanks, meters) {
 }
 
 function updateState(tanks) {
+  const now = Date.now();
+
   tanks.forEach((t) => {
-    previousStates[`tank_${t.tankId}`] =
-      t.lastReceivedTankData?.waterLevelPercentage || null;
+    const id = `tank_${t.tankId}`;
+    const current = t.lastReceivedTankData?.actualWaterVolume;
+    const time = t.lastReceivedTankData?.measuredAt || now;
+
+    if (current == null) return;
+
+    if (!tankMemory[id]) {
+      tankMemory[id] = {
+        initialVolume: current,
+        previousVolume: current,
+        currentVolume: current,
+        lastReadAt: time,
+      };
+    } else {
+      tankMemory[id].previousVolume = tankMemory[id].currentVolume;
+      tankMemory[id].currentVolume = current;
+      tankMemory[id].lastReadAt = time;
+    }
+
+    previousStates[id] = t.lastReceivedTankData?.waterLevelPercentage || null;
   });
+
+  ok("STATE", "Tank memory updated");
 }
 
 function emitHealth(tanks, meters) {
@@ -158,31 +183,27 @@ async function pollCycle() {
     const { tanks, meters } = await fetchData();
     const analyzedTanks = analyzeTanks(tanks);
 
-    tanks.forEach(t => engine.updateFreshness(t.tankId));
-    meters.forEach(m => engine.updateFreshness(m.flowDeviceId));
-
     await broadcast(analyzedTanks, meters);
     await persistData(analyzedTanks, meters);
 
     const alerts = await runAlerts(analyzedTanks, meters);
-
     await runThresholds(meters);
 
     const predictive = await runPredictiveChecks(analyzedTanks, meters);
 
-    if (predictive.refillAlerts.length ||
-        predictive.trendAlerts.length ||
-        predictive.leakAlerts.length) {
+    if (
+      predictive.refillAlerts.length ||
+      predictive.trendAlerts.length ||
+      predictive.leakAlerts.length
+    ) {
       io.emit("predictive:alerts", predictive);
     }
 
     runAI(analyzedTanks, meters);
-
     emitHealth(analyzedTanks, meters);
 
     updateState(analyzedTanks);
 
-  
     engine.snapshot({
       tanks: analyzedTanks,
       meters,
@@ -198,8 +219,8 @@ async function pollCycle() {
   }
 }
 
-
 setInterval(pollCycle, 60 * 1000);
+
 
 cron.schedule(
   "0 7 * * *",
@@ -233,7 +254,6 @@ cron.schedule(
   },
   { timezone: "Africa/Nairobi" }
 );
-
 
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
