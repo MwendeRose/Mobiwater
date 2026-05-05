@@ -1,7 +1,7 @@
 const { sendEmail, sendSMS } = require("./models/notifications");
 
 const lastAlerts = new Map();
-
+const tankMemory = new Map();
 
 function canSend(key, cooldownMs = 10 * 60 * 1000) {
   const last = lastAlerts.get(key);
@@ -14,17 +14,26 @@ function canSend(key, cooldownMs = 10 * 60 * 1000) {
   return false;
 }
 
-
-function timeAgo(date) {
-  if (!date) return "unknown time";
-
-  const diffMs = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diffMs / 60000);
-
-  if (mins < 1) return "just now";
-  return `${mins} min${mins !== 1 ? "s" : ""} ago`;
+function formatNumber(n) {
+  return Number(n ?? 0).toFixed(1);
 }
 
+function formatTime(date) {
+  if (!date) return "unknown";
+
+  return new Date(date).toLocaleString("en-GB", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+/**
+ * MAIN ALERT FUNCTION
+ */
 async function triggerAlert({ type, title, message, key }) {
   try {
     if (key && !canSend(key)) return;
@@ -35,59 +44,54 @@ async function triggerAlert({ type, title, message, key }) {
 
     if (typeof message === "object") {
       const {
+        tankId,
         tankName,
         currentVolume,
-        previousVolume,
-        initialVolume,
         percentage,
         lastReadAt,
       } = message;
 
-      const changeFromPrev =
-        previousVolume != null
-          ? currentVolume - previousVolume
-          : 0;
+      const id = `tank_${tankId}`;
 
-      const changeFromInitial =
-        initialVolume != null
-          ? currentVolume - initialVolume
-          : 0;
+      const prev = tankMemory.get(id) || {
+        initialVolume: currentVolume,
+        lastVolume: currentVolume,
+      };
+
+      const changeFromLast = currentVolume - prev.lastVolume;
+      const totalChange = currentVolume - prev.initialVolume;
+
+      // update memory
+      tankMemory.set(id, {
+        initialVolume: prev.initialVolume,
+        lastVolume: currentVolume,
+      });
 
       emailBody = `
-        <div style="font-family:Arial; padding:10px;">
-          <h2 style="color:#b91c1c;">${tankName} Alert</h2>
+TANK ALERT: ${tankName}
 
-          <p><b>Current Reading:</b> ${currentVolume} L (${percentage}%)</p>
+Current Level: ${percentage}% (${formatNumber(currentVolume)} L)
+Initial Reading: ${formatNumber(prev.initialVolume)} L
+Last Reading: ${formatNumber(prev.lastVolume)} L
 
-          <p><b>Previous Reading:</b> ${previousVolume ?? "N/A"} L</p>
+Change since last: ${formatNumber(changeFromLast)} L
+Total change: ${formatNumber(totalChange)} L
 
-          <p><b>Initial Reading:</b> ${initialVolume ?? "N/A"} L</p>
+Last updated: ${formatTime(lastReadAt)}
 
-          <hr/>
+⚠ Risk Alert: Immediate attention required
+      `.trim();
+    }
 
-          <p><b>Change from last reading:</b> ${changeFromPrev} L</p>
 
-          <p><b>Total change since start:</b> ${changeFromInitial} L</p>
-
-          <p><b>Last updated:</b> ${timeAgo(lastReadAt)}</p>
-
-          <hr/>
-
-          <p style="color:#dc2626;">
-            ⚠ Risk Alert: Tank condition requires attention immediately.
-          </p>
-        </div>
-      `;
-    } else {
-      emailBody = `<p>${message}</p>`;
+    else {
+      emailBody = `${message}`;
     }
 
     await sendEmail(title, emailBody);
     await sendSMS(
       `${title}: ${
-        typeof message === "string"
-          ? message
-          : "Tank alert triggered"
+        typeof message === "string" ? message : "Tank alert triggered"
       }`
     );
   } catch (err) {

@@ -97,9 +97,6 @@ class SystemEngine {
     console.log(`[ALERT] RESOLVED: ${id}`);
   }
 
-  // ─────────────────────────────────────────────
-  // 5. DATA FRESHNESS
-  // ─────────────────────────────────────────────
   updateFreshness(key) {
     this.lastSeen.set(key, Date.now());
   }
