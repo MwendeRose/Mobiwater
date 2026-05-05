@@ -16,11 +16,21 @@ const {
   saveMeterReadings,
   connectDB,
 } = require("./db");
+
 const { sendDailyReport } = require("./report");
+
+const {
+  runPredictiveChecks,
+  sendRefillSchedule,
+  sendBillingReport,
+} = require("./predictive");
+
+const SystemEngine = require("./systemEngine");
+const engine = new SystemEngine();
 
 const Analyzer = require("./analyzer");
 
-// fallback AI
+
 let analyzeSystem = () => "AI unavailable";
 try {
   analyzeSystem = require("./models/ai").analyzeSystem;
@@ -49,6 +59,7 @@ async function fetchData() {
     getTanks(),
     getMeters(),
   ]);
+
   ok("API", `Fetched ${tanks.length} tanks, ${meters.length} meters`);
   return { tanks, meters };
 }
@@ -56,27 +67,23 @@ async function fetchData() {
 function analyzeTanks(tanks) {
   return tanks.map((tank) => {
     const data = tank.lastReceivedTankData;
-
     if (!data) return tank;
 
     const analysis = analyzer.process(data);
-
-    return {
-      ...tank,
-      analysis,
-    };
+    return { ...tank, analysis };
   });
 }
 
-async function broadcast(io, tanks, meters) {
-  step("SOCKET", "Broadcasting data...");
+async function broadcast(tanks, meters) {
+  step("SOCKET", "Broadcasting...");
   io.emit("dashboard:update", {
     tanks,
     meters,
     updatedAt: new Date(),
   });
-  ok("SOCKET", "Broadcast complete");
+  ok("SOCKET", "Done");
 }
+
 
 async function persistData(tanks, meters) {
   step("DB", "Saving readings...");
@@ -84,11 +91,13 @@ async function persistData(tanks, meters) {
     saveTankReadings(tanks),
     saveMeterReadings(meters),
   ]);
-  ok("DB", "Data saved");
+  ok("DB", "Saved");
 }
+
 
 async function runAlerts(tanks, meters) {
   step("ALERTS", "Checking alerts...");
+
   const alerts = await checkAndSendAlerts(
     tanks,
     meters,
@@ -101,13 +110,16 @@ async function runAlerts(tanks, meters) {
   } else {
     ok("ALERTS", "None triggered");
   }
+
+  return alerts || [];
 }
 
 async function runThresholds(meters) {
   step("THRESHOLDS", "Checking consumption...");
   await checkConsumptionThresholds(meters);
-  ok("THRESHOLDS", "Complete");
+  ok("THRESHOLDS", "Done");
 }
+
 
 function runAI(tanks, meters) {
   step("AI", "Generating insight...");
@@ -118,20 +130,14 @@ function runAI(tanks, meters) {
     time: new Date(),
   });
 
-  ok("AI", "Insight generated");
+  ok("AI", "Done");
 }
 
 function updateState(tanks) {
-  step("STATE", "Updating state...");
-
   tanks.forEach((t) => {
-    const level =
+    previousStates[`tank_${t.tankId}`] =
       t.lastReceivedTankData?.waterLevelPercentage || null;
-
-    previousStates[`tank_${t.tankId}`] = level;
   });
-
-  ok("STATE", "Updated");
 }
 
 function emitHealth(tanks, meters) {
@@ -150,16 +156,25 @@ async function pollCycle() {
     step("CYCLE", "Starting");
 
     const { tanks, meters } = await fetchData();
-
     const analyzedTanks = analyzeTanks(tanks);
 
-    await broadcast(io, analyzedTanks, meters);
+    tanks.forEach(t => engine.updateFreshness(t.tankId));
+    meters.forEach(m => engine.updateFreshness(m.flowDeviceId));
 
+    await broadcast(analyzedTanks, meters);
     await persistData(analyzedTanks, meters);
 
-    await runAlerts(analyzedTanks, meters);
+    const alerts = await runAlerts(analyzedTanks, meters);
 
     await runThresholds(meters);
+
+    const predictive = await runPredictiveChecks(analyzedTanks, meters);
+
+    if (predictive.refillAlerts.length ||
+        predictive.trendAlerts.length ||
+        predictive.leakAlerts.length) {
+      io.emit("predictive:alerts", predictive);
+    }
 
     runAI(analyzedTanks, meters);
 
@@ -167,25 +182,35 @@ async function pollCycle() {
 
     updateState(analyzedTanks);
 
-    const duration = Date.now() - start;
-    ok("CYCLE", `Completed in ${duration}ms`);
+  
+    engine.snapshot({
+      tanks: analyzedTanks,
+      meters,
+      alerts: alerts.length,
+      duration: Date.now() - start,
+    });
+
+    ok("CYCLE", `Done in ${Date.now() - start}ms`);
   } catch (err) {
     fail("CYCLE", err.message);
-
-    console.error("\nFULL ERROR:");
     console.error(err.response?.status || "No status");
     console.error(err.response?.data || err.message);
   }
 }
+
 
 setInterval(pollCycle, 60 * 1000);
 
 cron.schedule(
   "0 7 * * *",
   async () => {
-    step("REPORT", "Sending daily report...");
+    step("REPORT", "Daily tasks running...");
     try {
-      await sendDailyReport();
+      const { tanks } = await fetchData();
+      await Promise.all([
+        sendDailyReport(),
+        sendRefillSchedule(analyzeTanks(tanks)),
+      ]);
       ok("REPORT", "Sent");
     } catch (err) {
       fail("REPORT", err.message);
@@ -193,6 +218,22 @@ cron.schedule(
   },
   { timezone: "Africa/Nairobi" }
 );
+
+cron.schedule(
+  "0 8 1 * *",
+  async () => {
+    step("BILLING", "Running billing...");
+    try {
+      const meters = await getMeters();
+      await sendBillingReport(meters);
+      ok("BILLING", "Sent");
+    } catch (err) {
+      fail("BILLING", err.message);
+    }
+  },
+  { timezone: "Africa/Nairobi" }
+);
+
 
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
