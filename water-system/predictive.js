@@ -11,7 +11,6 @@ async function runPredictiveChecks(tanks, meters) {
 
     const pct = data.waterLevelPercentage || 0;
 
-    // simple predictive warning
     if (pct > 10 && pct < 20) {
       await triggerAlert({
         type: "PREDICTIVE_WARNING",
