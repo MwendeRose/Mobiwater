@@ -133,7 +133,7 @@ function runAI(tanks, meters) {
     time: new Date(),
   });
 
-  ok("AI", "Done");
+  ok("AI", "Done"):
 }
 
 function updateState(tanks) {
