@@ -8,7 +8,9 @@ const cron = require("node-cron");
 
 const { step, ok, fail } = require("./utils/logger");
 
-const { getTanks, getMeters } = require("./mobiwater");
+const { getTanks, getMeters } = process.env.SIM_MODE === "1"
+  ? require("./mobiwater.sim")
+  : require("./mobiwater");
 const { checkAndSendAlerts } = require("./alerts");
 const { checkConsumptionThresholds } = require("./thresholds");
 const {
@@ -133,7 +135,7 @@ function runAI(tanks, meters) {
     time: new Date(),
   });
 
-  ok("AI", "Done"):
+  ok("AI", "Done");
 }
 
 function updateState(tanks) {
